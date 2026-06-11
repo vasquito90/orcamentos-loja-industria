@@ -251,6 +251,7 @@ table.tb.mat col.c-ref{width:9%}table.tb.mat col.c-mar{width:11%}table.tb.mat co
       <label class="chk" style="margin-bottom:8px"><input type="checkbox" id="baseEq" checked> Calcular valor a partir dos equipamentos (preço × visitas)</label>
       <div class="fld" id="valAnoWrap"><label>Valor base / ano (€) — manual</label><input type="number" id="valAno" value="0" step="50"></div>
       <div class="fld" id="valAnoCalc" style="display:none"><label>Valor base / ano (calculado dos equipamentos)</label><input type="text" id="valAnoView" disabled style="opacity:.8;font-weight:600"></div>
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="renovAuto" checked> Renovação automática no fim do prazo</label>
     </div>
 
     <div class="sec">
@@ -353,7 +354,7 @@ function defaultState(){return{
   contactos:[{departamento:'Manutenção',nome:'',indicativo:'',telefone:'',email:''}],
   sede:'Matosinhos (Leça do Balio)',km:0,deslocManual:'',observacoes:'',validade:30,planoEdits:{},respUtil:6,respFds:12,refPHC:'',
   equipamentos:[{etiqueta:'',tipoEquip:'Caldeira',combustivel:'—',marca:'',modelo:'',sn:'',local:'',frequencia:'semestral',tiposRevisao:['Revisão completa','Inspeção visual'],precosVisita:[0,0]}],
-  contrato:{dataInicio:'',dataFim:'',anos:3,avenca:'mensal',valorAnual:0,baseDeEquipamentos:true},
+  contrato:{dataInicio:'',dataFim:'',anos:3,avenca:'mensal',valorAnual:0,baseDeEquipamentos:true,renovacaoAuto:true},
   descFid:10,
   incluido:{horas:0,piquetes:0,deslocacoes:0,tarifaMO:'principal',valorizar:'cheio',somar:true},
   tabela:{moPrincipal:55,moSecundario:35,piquete:100,kmRate:0.70,kmMin:30},
@@ -510,6 +511,7 @@ $('paper').addEventListener('change',e=>{
 });
 $('inc_somar').onchange=e=>{S.incluido.somar=e.target.checked;render();};
 $('baseEq').onchange=e=>{S.contrato.baseDeEquipamentos=e.target.checked;$('valAnoWrap').style.display=e.target.checked?'none':'block';$('valAnoCalc').style.display=e.target.checked?'block':'none';render();};
+$('renovAuto').onchange=e=>{S.contrato.renovacaoAuto=e.target.checked;render();};
 $('c_nome').addEventListener('blur',()=>{S.cliente.nome=titleCase(S.cliente.nome);$('c_nome').value=S.cliente.nome;render();});
 $('c_mor').addEventListener('blur',()=>{S.cliente.morada=titleCase(S.cliente.morada);$('c_mor').value=S.cliente.morada;render();});
 $('anos').addEventListener('change',()=>{S.contrato.anos=+$('anos').value;applyTier();recalcFim();if(S.materiais.incluir)drawMat();render();});
@@ -718,13 +720,13 @@ function render(){
   </div>` : ''}
 
   <div class="block"><div class="block-t">Rescisão e denúncia</div>
-    <p class="clause"><b>1.</b> O contrato renova-se automaticamente por períodos iguais e sucessivos, salvo denúncia escrita de qualquer das partes com a antecedência mínima de 60 dias face ao termo. <b>2.</b> Qualquer das partes pode resolver o contrato em caso de incumprimento definitivo da outra, não sanado no prazo de 15 dias após interpelação escrita. <b>3.</b> Em caso de denúncia ou resolução por iniciativa do Cliente sem fundamento em incumprimento da Loja Indústria, são devidas as avenças vincendas até ao termo do período contratual em curso, a título de compensação pelos descontos de fidelização concedidos. <b>4.</b> A cessação do contrato não prejudica o pagamento de serviços já prestados nem de peças e materiais já fornecidos.</p>
+    <p class="clause">${S.contrato.renovacaoAuto!==false ? '<b>1.</b> O contrato renova-se automaticamente por períodos iguais e sucessivos, salvo denúncia escrita de qualquer das partes com a antecedência mínima de 60 dias face ao termo.' : '<b>1.</b> O contrato vigora pelo prazo contratado, cessando automaticamente no seu termo, sem renovação automática. Qualquer renovação dependerá de novo acordo escrito entre as partes.'} <b>2.</b> Qualquer das partes pode resolver o contrato em caso de incumprimento definitivo da outra, não sanado no prazo de 15 dias após interpelação escrita. <b>3.</b> Em caso de denúncia ou resolução por iniciativa do Cliente sem fundamento em incumprimento da Loja Indústria, são devidas as avenças vincendas até ao termo do período contratual em curso, a título de compensação pelos descontos de fidelização concedidos. <b>4.</b> A cessação do contrato não prejudica o pagamento de serviços já prestados nem de peças e materiais já fornecidos.</p>
   </div>
 
   <div class="block"><div class="block-t">Adjudicação</div>
     <p style="font-size:11px;color:var(--d-mut);margin:2px 0 0">A presente proposta torna-se contratualmente vinculativa após adjudicação mediante Nota de Encomenda e assinatura do Cliente. O contrato inicia-se na data de realização da primeira visita, a agendar por acordo entre as partes após a adjudicação. A primeira cobrança da avença inicia-se no mês da primeira visita.</p>
     <div class="grid2" style="margin-top:10px"><span class="k">Nota de Encomenda (NE) nº</span><span class="v">________________________</span><span class="k">Data de adjudicação</span><span class="v">____ / ____ / ________</span></div>
-    <div class="sign"><div class="line">O Cliente (assinatura e carimbo)</div><div class="line">Loja Indústria · JWF Group<br><span style="font-size:8pt;color:#999">NIF 513 040 692</span></div></div>
+    <div class="sign"><div class="line">O Cliente (assinatura e carimbo)</div><div class="line">Loja Indústria · JWF Group<br>Vasco Silva · Diretor Técnico<br><span style="font-size:8pt;color:#999">NIF 513 040 692</span></div></div>
   </div>
 
   <div class="fineprint">Valores acrescidos de IVA à taxa legal em vigor. Os valores de mão de obra, deslocações e piquetes seguem a tabela em vigor no ano de prestação do serviço. As revisões seguem o plano de manutenção do fabricante. Peças, materiais e trabalhos fora do âmbito descrito são faturados ao abrigo dos descontos contratuais indicados.</div>
@@ -819,6 +821,7 @@ function syncStatic(){
   $('km').value=S.km;$('dataIni').value=S.contrato.dataInicio;$('anos').value=String(S.contrato.anos);
   $('freq').value=S.contrato.avenca;$('valAno').value=S.contrato.valorAnual;$('descFid').value=S.descFid;
   if($('baseEq')){const be=S.contrato.baseDeEquipamentos!==false;$('baseEq').checked=be;$('valAnoWrap').style.display=be?'none':'block';$('valAnoCalc').style.display=be?'block':'none';}
+  if($('renovAuto'))$('renovAuto').checked=S.contrato.renovacaoAuto!==false;
   $('inc_h').value=S.incluido.horas;$('inc_p').value=S.incluido.piquetes;$('inc_d').value=S.incluido.deslocacoes;
   $('inc_mo').value=S.incluido.tarifaMO;$('inc_val').value=S.incluido.valorizar;$('inc_somar').checked=S.incluido.somar;
   $('d_h').value=S.descontos.horas;$('d_d').value=S.descontos.deslocacoes;$('d_p').value=S.descontos.piquetes;$('d_pg').value=S.descontos.pecasGeral;
