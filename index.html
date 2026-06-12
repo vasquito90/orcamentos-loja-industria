@@ -516,7 +516,9 @@ $('c_nome').addEventListener('blur',()=>{S.cliente.nome=titleCase(S.cliente.nome
 $('c_mor').addEventListener('blur',()=>{S.cliente.morada=titleCase(S.cliente.morada);$('c_mor').value=S.cliente.morada;render();});
 $('anos').addEventListener('change',()=>{S.contrato.anos=+$('anos').value;applyTier();recalcFim();if(S.materiais.incluir)drawMat();render();});
 ['t1','t2','t3','t4','t5'].forEach(id=>$(id).addEventListener('input',()=>{applyTier();render();}));
-function applyTier(){const a=S.contrato.anos;S.descFid=+$('t'+a).value;$('descFid').value=S.descFid;}
+function applyTier(){const a=S.contrato.anos;S.descFid=+$('t'+a).value;$('descFid').value=S.descFid;
+  S.descontos.horas=S.descontos.deslocacoes=S.descontos.piquetes=S.descontos.pecasGeral=S.descFid;
+  if($('d_h'))$('d_h').value=S.descFid; if($('d_d'))$('d_d').value=S.descFid; if($('d_p'))$('d_p').value=S.descFid; if($('d_pg'))$('d_pg').value=S.descFid;}
 function recalcFim(){if(S.contrato.dataInicio){const d=new Date(S.contrato.dataInicio);d.setFullYear(d.getFullYear()+S.contrato.anos);d.setDate(d.getDate()-1);S.contrato.dataFim=d.toISOString().slice(0,10);$('dataFim').value=S.contrato.dataFim;}}
 
 // ---------- CALC ----------
@@ -990,7 +992,7 @@ render=function(){ _origRender.apply(this,arguments); autoSave(); };
 // ---------- INIT + restauro do ultimo orcamento ----------
 (function(){
   try{ const raw=localStorage.getItem(LS_KEY);
-    if(raw){ fillFull(JSON.parse(raw)); applyTier(); render(); return; }
+    if(raw){ fillFull(JSON.parse(raw)); render(); return; }
   }catch(e){ console.warn('estado guardado invalido', e); }
   drawContactos();drawEq();drawMarca();applyTier();render();
 })();
