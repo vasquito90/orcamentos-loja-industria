@@ -1,5 +1,5 @@
 // Service worker — Gerador de Orçamentos Loja Indústria
-const VERSION = 'v31.4';
+const VERSION = 'v31.5';
 const CACHE = 'orc-loja-industria-' + VERSION;
 const ASSETS = ['./', './index.html', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-512-maskable.png', './icon-180.png'];
