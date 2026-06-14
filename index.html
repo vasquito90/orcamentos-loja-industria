@@ -13,6 +13,8 @@
 <meta name="apple-mobile-web-app-title" content="Orçamentos">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" href="icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -181,6 +183,20 @@ table.tb.mat col.c-ref{width:9%}table.tb.mat col.c-mar{width:11%}table.tb.mat co
 <div class="app">
   <aside class="panel">
     <div class="panel-head"><h1>Gerador de Orçamentos</h1><p>Loja Indústria · contratos de manutenção · v2 <span id="saveFlag" style="color:#9fd6b0;opacity:.45;transition:opacity .3s;margin-left:6px;font-size:11px"></span></p></div>
+    <div class="sec" id="cloudBox">
+      <h2><span class="n">&#9729;</span> Biblioteca na nuvem</h2>
+      <div id="cloudLogin">
+        <div class="fld"><label>Email</label><input type="email" id="cloudEmail" placeholder="o.teu@email" autocomplete="username"></div>
+        <div class="fld"><label>Palavra-passe da equipa</label><input type="password" id="cloudPass" autocomplete="current-password"></div>
+        <button class="btn btn-ai" id="cloudLoginBtn" style="width:100%">Entrar</button>
+      </div>
+      <div id="cloudUser" style="display:none">
+        <p class="hint" style="margin-top:0">Sess&#227;o: <b id="cloudWho" style="color:#fff"></b></p>
+        <div class="voicebar"><button class="btn btn-ai" id="cloudLibBtn" style="flex:1">&#128218; Abrir biblioteca</button><button class="btn btn-ghost" id="cloudLogoutBtn">Sair</button></div>
+      </div>
+      <div class="status" id="cloudStatus"></div>
+      <p class="hint">Ao gerar PDF, o or&#231;amento &#233; guardado automaticamente na nuvem (com sess&#227;o iniciada) e fica vis&#237;vel para toda a equipa.</p>
+    </div>
 
     <div class="sec">
       <h2><span class="n">1</span> Ditar com voz</h2>
@@ -1011,6 +1027,106 @@ if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){
     navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(_reloaded)return; _reloaded=true; location.reload(); });
   });
 }
+
+/* ================= NUVEM (Supabase) ================= */
+const SB_URL='https://vftqzspcvoizbdfldqnq.supabase.co';
+const SB_KEY='sb_publishable_MjUVDqxku1tAOKt7NbjKlQ_gUWZH0pF';
+let sbc=null; try{ if(window.supabase&&window.supabase.createClient) sbc=window.supabase.createClient(SB_URL,SB_KEY); }catch(e){}
+function $c(id){return document.getElementById(id);}
+function cloudStatus(m,err){const el=$c('cloudStatus'); if(el){el.textContent=m||''; el.className='status'+(err?' err':'');}}
+async function cloudSession(){ if(!sbc) return null; try{ const r=await sbc.auth.getSession(); return r.data.session||null; }catch(e){ return null; } }
+async function cloudRefreshUI(){
+  if(!sbc){ if($c('cloudBox')) $c('cloudBox').style.display='none'; return; }
+  const sess=await cloudSession();
+  if($c('cloudLogin')&&$c('cloudUser')){
+    $c('cloudLogin').style.display = sess?'none':'block';
+    $c('cloudUser').style.display = sess?'block':'none';
+    if(sess&&$c('cloudWho')) $c('cloudWho').textContent=sess.user.email||'sessao ativa';
+  }
+}
+async function cloudLogin(){
+  if(!sbc){cloudStatus('Indisponivel (sem internet?)',true);return;}
+  const email=(($c('cloudEmail').value)||'').trim(); const password=$c('cloudPass').value||'';
+  if(!email||!password){cloudStatus('Indica email e palavra-passe.',true);return;}
+  cloudStatus('A entrar...');
+  const r=await sbc.auth.signInWithPassword({email,password});
+  if(r.error){cloudStatus('Falha: '+r.error.message,true);return;}
+  $c('cloudPass').value=''; cloudStatus('Sessao iniciada.'); cloudRefreshUI();
+}
+async function cloudLogout(){ if(sbc) await sbc.auth.signOut(); cloudStatus(''); cloudRefreshUI(); }
+function eurC(n){try{return new Intl.NumberFormat('pt-PT',{style:'currency',currency:'EUR'}).format(+n||0);}catch(e){return (n||0)+' EUR';}}
+async function cloudSave(){
+  const sess=await cloudSession(); if(!sess) return false;
+  cloudStatus('A guardar na nuvem...');
+  const numero=(window._docRef||''); const cliente=(S.cliente&&S.cliente.nome)||''; const nif=(S.cliente&&S.cliente.nif)||'';
+  let total=0; try{ const k=calc(); total=k.total||0; }catch(e){}
+  let pdf_path=null;
+  try{
+    const el=document.querySelector('.paper');
+    if(el && window.html2pdf){
+      const opt={margin:0,image:{type:'jpeg',quality:0.96},html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css','legacy']}};
+      const blob=await html2pdf().set(opt).from(el).outputPdf('blob');
+      const safe=(numero||'orcamento').replace(/[^\w\-]+/g,'-');
+      pdf_path='orc/'+Date.now()+'-'+safe+'.pdf';
+      const up=await sbc.storage.from('orcamentos-pdf').upload(pdf_path,blob,{contentType:'application/pdf',upsert:true});
+      if(up.error){ pdf_path=null; }
+    }
+  }catch(e){ pdf_path=null; }
+  const row={numero:numero,cliente:cliente,nif:nif,total:total,estado:S,pdf_path:pdf_path,criado_por:sess.user.email,updated_at:new Date().toISOString()};
+  const r=await sbc.from('orcamentos').insert(row);
+  if(r.error){ cloudStatus('Erro ao guardar: '+r.error.message,true); return false; }
+  cloudStatus('Guardado na biblioteca'+(pdf_path?' (com PDF).':' (sem PDF).'));
+  return true;
+}
+async function cloudOpenLibrary(){
+  const sess=await cloudSession(); if(!sess){cloudStatus('Inicia sessao primeiro.',true);return;}
+  $c('cloudLib').style.display='flex';
+  const body=$c('cloudLibBody'); body.innerHTML='A carregar...';
+  const r=await sbc.from('orcamentos').select('id,created_at,numero,cliente,nif,total,pdf_path,criado_por').order('created_at',{ascending:false}).limit(500);
+  if(r.error){ body.innerHTML='Erro: '+r.error.message; return; }
+  const data=r.data||[];
+  if(!data.length){ body.innerHTML='<p style="color:#637282">Ainda nao ha orcamentos guardados.</p>'; return; }
+  let h='<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;border-bottom:2px solid #e3e8ee"><th style="padding:6px">N.</th><th style="padding:6px">Cliente</th><th style="padding:6px">Data</th><th style="padding:6px;text-align:right">Total</th><th style="padding:6px">Por</th><th style="padding:6px"></th></tr></thead><tbody>';
+  data.forEach(function(rec){
+    const d=new Date(rec.created_at).toLocaleDateString('pt-PT');
+    const pdfBtn = rec.pdf_path ? ('<button class="liBtn" data-pdf="'+rec.pdf_path+'" style="margin-right:6px">Ver PDF</button>') : '';
+    const por = (rec.criado_por||'').split('@')[0];
+    h+='<tr style="border-bottom:1px solid #eceff2"><td style="padding:6px">'+(rec.numero||'-')+'</td><td style="padding:6px">'+(rec.cliente||'-')+'</td><td style="padding:6px">'+d+'</td><td style="padding:6px;text-align:right">'+eurC(rec.total)+'</td><td style="padding:6px;color:#637282">'+por+'</td><td style="padding:6px;text-align:right;white-space:nowrap">'+pdfBtn+'<button class="liBtn" data-edit="'+rec.id+'">Editar</button></td></tr>';
+  });
+  h+='</tbody></table>';
+  body.innerHTML=h;
+}
+async function cloudViewPdf(path){
+  try{ const r=await sbc.storage.from('orcamentos-pdf').createSignedUrl(path,3600); if(r.error){cloudStatus('Erro PDF: '+r.error.message,true);return;} window.open(r.data.signedUrl,'_blank'); }catch(e){cloudStatus('Erro ao abrir PDF',true);}
+}
+async function cloudEditId(id){
+  try{
+    const r=await sbc.from('orcamentos').select('estado').eq('id',id).single();
+    if(r.error){cloudStatus('Erro: '+r.error.message,true);return;}
+    if(r.data&&r.data.estado){ fillFull(r.data.estado); $c('cloudLib').style.display='none'; cloudStatus('Orcamento carregado para edicao.'); }
+  }catch(e){cloudStatus('Erro ao carregar',true);}
+}
+(function(){
+  if($c('cloudLoginBtn')) $c('cloudLoginBtn').onclick=cloudLogin;
+  if($c('cloudPass')) $c('cloudPass').addEventListener('keydown',function(e){ if(e.key==='Enter') cloudLogin(); });
+  if($c('cloudLogoutBtn')) $c('cloudLogoutBtn').onclick=cloudLogout;
+  if($c('cloudLibBtn')) $c('cloudLibBtn').onclick=cloudOpenLibrary;
+  if($c('cloudLibClose')) $c('cloudLibClose').onclick=function(){ $c('cloudLib').style.display='none'; };
+  if($c('cloudLib')) $c('cloudLib').addEventListener('click',function(e){ if(e.target===$c('cloudLib')) $c('cloudLib').style.display='none'; });
+  if($c('cloudLibBody')) $c('cloudLibBody').addEventListener('click',function(e){ const b=e.target.closest('.liBtn'); if(!b)return; if(b.dataset.pdf) cloudViewPdf(b.dataset.pdf); else if(b.dataset.edit) cloudEditId(b.dataset.edit); });
+  const pb=$c('print'); if(pb){ const orig=pb.onclick; pb.onclick=async function(ev){ try{ const sess=await cloudSession(); if(sess){ await cloudSave(); } else { cloudStatus('Inicia sessao para guardar na nuvem.',true); } }catch(e){} if(typeof orig==='function'){ return orig.call(this,ev);} else { window.print(); } }; }
+  cloudRefreshUI();
+})();
 </script>
+<div id="cloudLib" style="display:none;position:fixed;inset:0;background:rgba(12,22,32,.62);z-index:60;align-items:center;justify-content:center;padding:18px">
+  <div style="background:#fff;color:#1c2630;border-radius:12px;max-width:920px;width:100%;max-height:86vh;overflow:auto;padding:18px;box-shadow:0 10px 40px rgba(0,0,0,.3)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 style="margin:0;font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#163E5C">Biblioteca de or&#231;amentos</h3>
+      <button id="cloudLibClose" style="border:none;background:#eef1f5;color:#1c2630;border-radius:8px;padding:8px 14px;font-weight:600;cursor:pointer">Fechar</button>
+    </div>
+    <div id="cloudLibBody" style="font-size:13px"></div>
+  </div>
+</div>
+<style>.liBtn{border:none;background:#163E5C;color:#fff;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer}.liBtn[data-pdf]{background:#F0901E;color:#1a1a1a}#cloudLibBody table th{color:#637282;font-weight:600}</style>
 </body>
 </html>
