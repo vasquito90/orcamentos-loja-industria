@@ -192,6 +192,7 @@ table.tb.mat col.c-ref{width:9%}table.tb.mat col.c-mar{width:11%}table.tb.mat co
       </div>
       <div id="cloudUser" style="display:none">
         <p class="hint" style="margin-top:0">Sess&#227;o: <b id="cloudWho" style="color:#fff"></b></p>
+        <button class="btn btn-ai" id="cloudSaveBtn" style="width:100%;margin-bottom:8px">&#9729; Guardar na nuvem</button>
         <div class="voicebar"><button class="btn btn-ai" id="cloudLibBtn" style="flex:1">&#128218; Abrir biblioteca</button><button class="btn btn-ghost" id="cloudLogoutBtn">Sair</button></div>
       </div>
       <div class="status" id="cloudStatus"></div>
@@ -1097,7 +1098,8 @@ async function cloudOpenLibrary(){
   body.innerHTML=h;
 }
 async function cloudViewPdf(path){
-  try{ const r=await sbc.storage.from('orcamentos-pdf').createSignedUrl(path,3600); if(r.error){cloudStatus('Erro PDF: '+r.error.message,true);return;} window.open(r.data.signedUrl,'_blank'); }catch(e){cloudStatus('Erro ao abrir PDF',true);}
+  const w=window.open('','_blank');
+  try{ const r=await sbc.storage.from('orcamentos-pdf').createSignedUrl(path,3600); if(r.error){ if(w)w.close(); cloudStatus('Erro PDF: '+r.error.message,true); return; } if(w){ w.location=r.data.signedUrl; } else { window.location=r.data.signedUrl; } }catch(e){ if(w)w.close(); cloudStatus('Erro ao abrir PDF',true); }
 }
 async function cloudEditId(id){
   try{
@@ -1106,8 +1108,9 @@ async function cloudEditId(id){
     if(r.data&&r.data.estado){ fillFull(r.data.estado); $c('cloudLib').style.display='none'; cloudStatus('Orcamento carregado para edicao.'); }
   }catch(e){cloudStatus('Erro ao carregar',true);}
 }
-(function(){
+function cloudWire(){
   if($c('cloudLoginBtn')) $c('cloudLoginBtn').onclick=cloudLogin;
+  if($c('cloudSaveBtn')) $c('cloudSaveBtn').onclick=async function(){ const sess=await cloudSession(); if(!sess){cloudStatus('Inicia sessao primeiro.',true);return;} await cloudSave(); };
   if($c('cloudPass')) $c('cloudPass').addEventListener('keydown',function(e){ if(e.key==='Enter') cloudLogin(); });
   if($c('cloudLogoutBtn')) $c('cloudLogoutBtn').onclick=cloudLogout;
   if($c('cloudLibBtn')) $c('cloudLibBtn').onclick=cloudOpenLibrary;
@@ -1116,7 +1119,8 @@ async function cloudEditId(id){
   if($c('cloudLibBody')) $c('cloudLibBody').addEventListener('click',function(e){ const b=e.target.closest('.liBtn'); if(!b)return; if(b.dataset.pdf) cloudViewPdf(b.dataset.pdf); else if(b.dataset.edit) cloudEditId(b.dataset.edit); });
   const pb=$c('print'); if(pb){ const orig=pb.onclick; pb.onclick=async function(ev){ try{ const sess=await cloudSession(); if(sess){ await cloudSave(); } else { cloudStatus('Inicia sessao para guardar na nuvem.',true); } }catch(e){} if(typeof orig==='function'){ return orig.call(this,ev);} else { window.print(); } }; }
   cloudRefreshUI();
-})();
+}
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',cloudWire);}else{cloudWire();}
 </script>
 <div id="cloudLib" style="display:none;position:fixed;inset:0;background:rgba(12,22,32,.62);z-index:60;align-items:center;justify-content:center;padding:18px">
   <div style="background:#fff;color:#1c2630;border-radius:12px;max-width:920px;width:100%;max-height:86vh;overflow:auto;padding:18px;box-shadow:0 10px 40px rgba(0,0,0,.3)">
