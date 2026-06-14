@@ -814,7 +814,7 @@ $('ai').onclick=async()=>{
 "pecasMarca":[{"marca":string,"pct":number}]}
 Regras: combustível "a gás"->"Gás natural". "visita semestral"->frequencia "semestral". A lista "tiposRevisao" tem um elemento por visita do ano (semestral=2, trimestral=4, anual=1...). Se disserem tipos diferentes por visita ("1ª revisão completa, 2ª inspeção visual")->["Revisão completa","Inspeção visual"]; se só disserem um tipo, repete-o para todas as visitas. "1200€ por ano"->valorAnual=1200. "2h mo"->horas=2. "189 km"->km=189. "indicativo +351"->indicativo="+351". "cliente 203"->codigo="203". "10% desconto"->descontoFidelizacao=10 e descontoPecasGeral=10. "peças weishaupt 23%"->pecasMarca=[{"marca":"Weishaupt","pct":23}]. departamento por defeito "Manutenção". Datas em português ("1 de janeiro de 2026")->"2026-01-01". Campos não mencionados: "" para texto, 0 para números, [] para listas.`;
   try{
-    const data=await aiCall({model:"claude-sonnet-4-20250514",max_tokens:1500,system:sys,messages:[{role:"user",content:txt}]});
+    const data=await aiCall({model:"claude-sonnet-4-6",max_tokens:1500,system:sys,messages:[{role:"user",content:txt}]});
     let out=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim().replace(/```json|```/g,'').trim();
     fill(JSON.parse(out));setStatus('✓ Campos preenchidos. Revê e gera o PDF.');
   }catch(e){setStatus('Não consegui interpretar ('+e.message+'). Preenche à mão.',true);}finally{$('ai').disabled=false;}
@@ -970,7 +970,7 @@ async function readDraft(b64,media){
   setStatus('A ler o rascunho com IA…');$('impRasc').disabled=true;
   const sys=`És um extrator para orçamentos de manutenção (caldeiras/queimadores) em Portugal. Recebes a FOTOGRAFIA de um rascunho manuscrito ou impresso e devolves ESTRITAMENTE um JSON (sem markdown). Usa o mesmo esquema de campos: cliente{nome,codigo,nif,morada}, contactos[{departamento,nome,telefone,email}], km, equipamentos[{tipoEquip,combustivel,marca,modelo,sn,frequencia,tiposRevisao[]}], dataInicio(YYYY-MM-DD), anos, avenca(mensal|bimestral|trimestral|semestral|anual|completa), valorAnual, incluido{horas,piquetes,deslocacoes}, descontoFidelizacao, descontoPecasGeral, pecasMarca[{marca,pct}]. Lê o que conseguires; campos ilegíveis ou ausentes ficam "" / 0 / []. Não inventes valores. Materiais de desgaste mencionados (kits, juntas, elétrodos) devem ir como nota no campo morada se não houver melhor sítio — mas o foco é cliente, equipamento, anos, avença e incluídos.`;
   try{
-    const data=await aiCall({model:"claude-sonnet-4-20250514",max_tokens:1500,system:sys,messages:[{role:"user",content:[
+    const data=await aiCall({model:"claude-sonnet-4-6",max_tokens:1500,system:sys,messages:[{role:"user",content:[
       {type:"image",source:{type:"base64",media_type:media,data:b64}},
       {type:"text",text:"Extrai os dados deste rascunho de orçamento para o JSON especificado."}
     ]}]});
@@ -992,7 +992,7 @@ $('print').onclick=()=>{
   window.print();
   setTimeout(()=>{document.title=orig;},800);
 };
-$('reset').onclick=()=>{ if(confirm('Limpar tudo e começar um orçamento novo? Os dados atuais serão apagados.')){ try{localStorage.removeItem(LS_KEY);}catch(e){} location.reload(); } };
+$('reset').onclick=()=>{ if(confirm('Limpar tudo e começar um orçamento novo? Os dados atuais serão apagados.')){ try{localStorage.removeItem(LS_KEY);localStorage.removeItem("orcCloudId");}catch(e){} location.reload(); } };
 
 // init
 // ---------- AUTO-GUARDAR (localStorage) ----------
@@ -1058,6 +1058,7 @@ function eurC(n){try{return new Intl.NumberFormat('pt-PT',{style:'currency',curr
 async function cloudSave(){
   const sess=await cloudSession(); if(!sess) return false;
   cloudStatus('A guardar na nuvem...');
+  try{ if(typeof render==='function') render(); }catch(e){}
   const numero=(window._docRef||''); const cliente=(S.cliente&&S.cliente.nome)||''; const nif=(S.cliente&&S.cliente.nif)||'';
   let total=0; try{ const k=calc(); total=k.total||0; }catch(e){}
   let pdf_path=null;
@@ -1072,10 +1073,18 @@ async function cloudSave(){
       if(up.error){ pdf_path=null; }
     }
   }catch(e){ pdf_path=null; }
-  const row={numero:numero,cliente:cliente,nif:nif,total:total,estado:S,pdf_path:pdf_path,criado_por:sess.user.email,updated_at:new Date().toISOString()};
-  const r=await sbc.from('orcamentos').insert(row);
-  if(r.error){ cloudStatus('Erro ao guardar: '+r.error.message,true); return false; }
-  cloudStatus('Guardado na biblioteca'+(pdf_path?' (com PDF).':' (sem PDF).'));
+  const row={numero:numero,cliente:cliente,nif:nif,total:total,estado:S,criado_por:sess.user.email,updated_at:new Date().toISOString()};
+  if(pdf_path) row.pdf_path=pdf_path;
+  const novo=!window._currentOrcId; let res;
+  if(window._currentOrcId){
+    res=await sbc.from('orcamentos').update(row).eq('id',window._currentOrcId).select('id').single();
+  } else {
+    res=await sbc.from('orcamentos').insert(row).select('id').single();
+  }
+  if(res.error){ cloudStatus('Erro ao guardar: '+res.error.message,true); return false; }
+  if(res.data&&res.data.id) window._currentOrcId=res.data.id;
+  try{ localStorage.setItem("orcCloudId", window._currentOrcId||""); }catch(e){}
+  cloudStatus((novo?'Guardado':'Atualizado')+' na biblioteca'+(pdf_path?' (com PDF).':'.'));
   return true;
 }
 async function cloudOpenLibrary(){
@@ -1104,10 +1113,11 @@ async function cloudEditId(id){
   try{
     const r=await sbc.from('orcamentos').select('estado').eq('id',id).single();
     if(r.error){cloudStatus('Erro: '+r.error.message,true);return;}
-    if(r.data&&r.data.estado){ fillFull(r.data.estado); $c('cloudLib').style.display='none'; cloudStatus('Orcamento carregado para edicao.'); }
+    if(r.data&&r.data.estado){ fillFull(r.data.estado); window._currentOrcId=id; try{ localStorage.setItem("orcCloudId", id); }catch(e){} $c('cloudLib').style.display='none'; cloudStatus('Orcamento carregado (ao guardar atualiza este registo).'); }
   }catch(e){cloudStatus('Erro ao carregar',true);}
 }
 function cloudWire(){
+  try{ window._currentOrcId = localStorage.getItem("orcCloudId") || null; }catch(e){}
   if($c('cloudLoginBtn')) $c('cloudLoginBtn').onclick=cloudLogin;
   if($c('cloudSaveBtn')) $c('cloudSaveBtn').onclick=async function(){ const sess=await cloudSession(); if(!sess){cloudStatus('Inicia sessao primeiro.',true);return;} await cloudSave(); };
   if($c('cloudPass')) $c('cloudPass').addEventListener('keydown',function(e){ if(e.key==='Enter') cloudLogin(); });
