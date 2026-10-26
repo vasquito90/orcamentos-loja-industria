@@ -170,6 +170,7 @@ table.tb.mat col.c-ref{width:9%}table.tb.mat col.c-mar{width:11%}table.tb.mat co
 </style>
 </head>
 <body>
+<datalist id="revsList"></datalist>
 <datalist id="marcasList">
   <option value="Weishaupt"></option>
   <option value="Viessmann"></option>
@@ -238,7 +239,8 @@ table.tb.mat col.c-ref{width:9%}table.tb.mat col.c-mar{width:11%}table.tb.mat co
         <div class="fld"><label>Valor por deslocação (auto)</label><input type="text" id="deslocAuto" disabled style="opacity:.8;font-weight:600"></div>
         <div class="fld"><label>Ou valor manual (€) — opcional</label><input type="number" id="deslocManual" placeholder="deixar vazio = automático" min="0" step="1"></div>
       </div>
-      <p class="hint">Regra: distância (ida) × 2 × 0,70 € (ida e volta), mínimo 30 €. Preenche o valor manual só se quiseres sobrepor.</p>
+      <p class="hint">Regra: distância (ida) × 2 × 0,70 € (ida e volta), mínimo 30 €. Preenche o valor manual só se quiseres sobrepor (0 ou vazio = automático).</p>
+      <div class="status err" id="deslocWarn" style="display:none"></div>
     </div>
 
     <div class="sec">
@@ -302,7 +304,7 @@ table.tb.mat col.c-ref{width:9%}table.tb.mat col.c-mar{width:11%}table.tb.mat co
     <div class="sec">
       <h2><span class="n">8</span> Tabela 2026 &amp; descontos fora de âmbito</h2>
       <div class="row">
-        <div class="fld"><label>€/h téc. principal</label><input type="number" id="tb_mo1" value="55" step="1"></div>
+        <div class="fld"><label>€/h téc. principal</label><input type="number" id="tb_mo1" value="60" step="1"></div>
         <div class="fld"><label>€/h téc. secundário</label><input type="number" id="tb_mo2" value="35" step="1"></div>
         <div class="fld"><label>€ / piquete</label><input type="number" id="tb_piq" value="100" step="5"></div>
       </div>
@@ -362,7 +364,8 @@ const tipos=['Caldeira','Queimador','Caldeira + Queimador','Permutador','Depósi
 const combs=['—','Gás natural','Propano','Gasóleo','Biomassa','Elétrico','Fuelóleo'];
 const freqs=['anual','semestral','trimestral','bimestral','mensal'];
 const freqN={anual:1,semestral:2,trimestral:4,bimestral:6,mensal:12};
-const revs=['Revisão completa','Inspeção visual + Medição de gases + Testes funcionais','Inspeção visual','Medição de gases','Testes funcionais','Limpeza geral'];
+const revs=['Revisão completa','Inspeção visual + Medição de gases + Testes funcionais','Inspeção visual','Medição de gases','Testes funcionais','Limpeza geral','Inspeção visual e testes funcionais','Manutenção completa aos depósitos de AQS','Limpeza e desincrustação do permutador','Análise de combustão e afinação do queimador'];
+setTimeout(()=>{const d=document.getElementById('revsList');if(d)d.innerHTML=revs.map(r=>`<option value="${r.replace(/"/g,'&quot;')}"></option>`).join('');},0);
 
 // ---------- STATE ----------
 function defaultState(){return{
@@ -373,7 +376,7 @@ function defaultState(){return{
   contrato:{dataInicio:'',dataFim:'',anos:3,avenca:'mensal',valorAnual:0,baseDeEquipamentos:true,renovacaoAuto:true},
   descFid:10,
   incluido:{horas:0,piquetes:0,deslocacoes:0,tarifaMO:'principal',valorizar:'cheio',somar:true},
-  tabela:{moPrincipal:55,moSecundario:35,piquete:100,kmRate:0.70,kmMin:30},
+  tabela:{moPrincipal:60,moSecundario:35,piquete:100,kmRate:0.70,kmMin:30},
   descontos:{horas:10,deslocacoes:10,piquetes:10,pecasGeral:10,pecasMarca:[]},
   materiais:{incluir:false,itens:[]}
 };}
@@ -402,9 +405,8 @@ function drawEq(){
     while(e.precosVisita.length<n)e.precosVisita.push(0);
     e.precosVisita.length=n;
     const revFields=e.tiposRevisao.map((tr,vi)=>{
-      const opts=revs.includes(tr)?revs:revs.concat([tr]);
       return `<div class="row" style="margin:6px 0 0">
-      <div class="fld" style="margin:0"><label>${ord(vi+1)} visita</label><select data-l="e" data-i="${i}" data-k="rev" data-vi="${vi}">${opts.map(r=>`<option ${tr==r?'selected':''}>${r}</option>`).join('')}</select></div>
+      <div class="fld" style="margin:0"><label>${ord(vi+1)} visita · tipo / descrição</label><input type="text" data-l="e" data-i="${i}" data-k="rev" data-vi="${vi}" list="revsList" value="${esc(tr)}" placeholder="ex.: Inspeção visual e testes às caldeiras"></div>
       <div class="fld" style="margin:0;flex:0 0 92px"><label>Preço €</label><input type="number" step="0.01" data-l="e" data-i="${i}" data-k="preco" data-vi="${vi}" value="${e.precosVisita[vi]||0}"></div></div>`;
     }).join('');
     const totalEq=eqTotalAno(e);
@@ -543,14 +545,15 @@ function freqLabel(f){return ({mensal:'mensal',bimestral:'bimestral',trimestral:
 function matTotalFinal(){if(!S.materiais.incluir)return 0;let f=0;S.materiais.itens.forEach(m=>{if(!m.designacao)return;f+=matLineTotal(m);});return f;}
 function eqBaseAno(){return S.equipamentos.reduce((s,e)=>s+eqTotalAno(e),0);}
 function deslocUnit(){ // valor de UMA deslocação
-  if(S.deslocManual!=null && S.deslocManual!=='' && !isNaN(+S.deslocManual)) return +S.deslocManual;
+  const man=(S.deslocManual!=null && S.deslocManual!=='')?+S.deslocManual:NaN;
+  if(!isNaN(man) && man>0) return man;   // 0 ou vazio = automático (pelos km)
   const kmIda=+S.km||0; const v=kmIda*2*(S.tabela.kmRate||0.70);
   return Math.max(v, S.tabela.kmMin||30);
 }
 function calc(){
   const a=S.contrato.anos, desc=+S.descFid;
   // --- MANUTENÇÃO: soma equipamentos × visitas, por ano × anos ---
-  const mntAno=eqBaseAno();
+  const mntAno=(S.contrato.baseDeEquipamentos===false)?(+S.contrato.valorAnual||0):eqBaseAno();
   const mntTot=mntAno*a;
   // --- INCLUÍDOS: por ano × anos (deslocação nova regra) ---
   const moRate=S.incluido.tarifaMO==='secundario'?S.tabela.moSecundario:S.tabela.moPrincipal;
@@ -560,21 +563,23 @@ function calc(){
   const vDesAno=(+S.incluido.deslocacoes)*desloc1;
   const incAno=vMOAno+vPiqAno+vDesAno;
   const incTot=incAno*a;
+  const somar=S.incluido.somar!==false;           // desmarcado = incluídos sem custo adicional
+  const incCobrado=somar?incTot:0;
   // --- PEÇAS: já é o total ao longo do contrato, JÁ COM o desconto certo por peça (marca ou contrato) ---
   const pecasTot=matTotalFinal();
   // --- DESCONTO de fidelização aplica-se a MANUTENÇÃO + INCLUÍDOS (as peças já estão descontadas) ---
-  const servicos=mntTot+incTot;
+  const servicos=mntTot+incCobrado;
   const descVal=servicos*desc/100;
   const servicosN=servicos-descVal;
   const total=servicosN+pecasTot;         // total do contrato
-  const brutoTot=mntTot+incTot+pecasTot;  // subtotal antes do desconto de serviços
+  const brutoTot=mntTot+incCobrado+pecasTot;  // subtotal antes do desconto de serviços
   const anuidade=total/a;
   // rubricas já líquidas (para o detalhe)
   const f=1-desc/100;
   const mntTotN=mntTot*f, incTotN=incTot*f, pecasTotN=pecasTot;
   const n=periods(S.contrato.avenca,a), porAvenca=total/n;
   return{a,desc,mntAno,mntTot,mntTotN,incAno,incTot,incTotN,vMOAno,vPiqAno,vDesAno,
-         pecasTot,pecasTotN,brutoTot,servicos,descVal,total,anuidade,n,porAvenca,moRate,desloc1};
+         pecasTot,pecasTotN,brutoTot,servicos,descVal,total,anuidade,n,porAvenca,moRate,desloc1,somar,incCobrado};
 }
 function net(price,disc){return price*(1-disc/100);}
 function genPlan(){
@@ -609,7 +614,11 @@ let _rt=null;function renderSoon(){clearTimeout(_rt);_rt=setTimeout(render,180);
 function render(){
   const c=S.cliente,k=calc();
   if($('valAnoView'))$('valAnoView').value=eur(eqBaseAno())+' /ano';
-  if($('deslocAuto')){const kmI=+S.km||0;const auto=Math.max(kmI*2*(S.tabela.kmRate||0.70),S.tabela.kmMin||30);$('deslocAuto').value=eur(auto)+(kmI*2*(S.tabela.kmRate||0.70)<(S.tabela.kmMin||30)?' (mínimo)':'');}
+  if($('valAnoWrap')&&S.contrato.baseDeEquipamentos===false){$('valAnoWrap').style.display='block';$('valAnoCalc').style.display='none';}
+  if($('deslocAuto')){const kmI=+S.km||0;const auto=Math.max(kmI*2*(S.tabela.kmRate||0.70),S.tabela.kmMin||30);const nD=+S.incluido.deslocacoes||0;
+    $('deslocAuto').value=eur(k.desloc1)+(k.desloc1!==auto?' (manual)':(kmI*2*(S.tabela.kmRate||0.70)<(S.tabela.kmMin||30)?' (mínimo)':''))+(nD>0?(' × '+nD+'/ano = '+eur(k.vDesAno)+'/ano'):'');}
+  if($('deslocWarn')){const w=$('deslocWarn');const show=(+S.km>0 || (+S.deslocManual>0))&&!(+S.incluido.deslocacoes>0);w.style.display=show?'block':'none';
+    w.textContent=show?'Atenção: a deslocação não entra no valor da avença porque "Deslocações" incluídas (secção 7) está a 0. Define quantas deslocações/ano ficam incluídas.':'';}
   const kmIda=+S.km||0;
   const desloBase=k.desloc1;            // já com mín 35 e ida-volta×0,70
   const desloNet=desloBase;             // a nova tarifa já é tudo incluído (sem desconto extra)
@@ -725,7 +734,7 @@ function render(){
   <div class="block"><div class="block-t">Condições financeiras</div>
     <div class="valbox">
       <div class="vr"><span class="lbl">Manutenção dos equipamentos · ${eur(k.mntAno)}/ano × ${k.a} ano(s)</span><span class="amt">${eur(k.mntTot)}</span></div>
-      ${k.incTot>0?`<div class="vr"><span class="lbl">Serviços incluídos (deslocação, MO, piquetes) · ${eur(k.incAno)}/ano × ${k.a}</span><span class="amt">${eur(k.incTot)}</span></div>`:''}
+      ${k.incCobrado>0?`<div class="vr"><span class="lbl">Serviços incluídos (deslocação, MO, piquetes) · ${eur(k.incAno)}/ano × ${k.a}</span><span class="amt">${eur(k.incTot)}</span></div>`:(k.incTot>0?`<div class="vr"><span class="lbl">Serviços incluídos (deslocação, MO, piquetes)</span><span class="amt" style="font-size:10px">incluídos na avença</span></div>`:'')}
       <div class="vr disc"><span class="lbl">Desconto de fidelização (${k.desc}%) sobre serviços</span><span class="amt">− ${eur(k.descVal)}</span></div>
       ${k.pecasTot>0?`<div class="vr"><span class="lbl">Peças / materiais (total do contrato, c/ desconto por marca)</span><span class="amt">${eur(k.pecasTot)}</span></div>`:''}
       <div class="vr tot"><span class="lbl">VALOR TOTAL DO CONTRATO · ${k.a} ano(s)</span><span class="amt">${eur(k.total)}</span></div>
@@ -806,13 +815,13 @@ $('ai').onclick=async()=>{
 {"cliente":{"codigo":string,"nome":string,"nif":string,"morada":string},
 "contactos":[{"departamento":string,"nome":string,"indicativo":string,"telefone":string,"email":string}],
 "km":number,
-"equipamentos":[{"tipoEquip":"Caldeira"|"Queimador"|"Caldeira + Queimador"|"Permutador"|"Depósito"|"Outro","combustivel":string,"marca":string,"modelo":string,"sn":string,"local":string,"frequencia":"anual"|"semestral"|"trimestral"|"bimestral"|"mensal","tiposRevisao":["Revisão completa"|"Inspeção visual + Medição de gases + Testes funcionais"|"Inspeção visual"|"Medição de gases"|"Testes funcionais"|"Limpeza geral"]}],
+"equipamentos":[{"etiqueta":string,"tipoEquip":"Caldeira"|"Queimador"|"Caldeira + Queimador"|"Permutador"|"Depósito"|"Outro","combustivel":string,"marca":string,"modelo":string,"sn":string,"local":string,"frequencia":"anual"|"semestral"|"trimestral"|"bimestral"|"mensal","tiposRevisao":[string]}],
 "dataInicio":"YYYY-MM-DD","anos":number,"avenca":"mensal"|"bimestral"|"trimestral"|"semestral"|"anual"|"completa",
 "valorAnual":number,
 "incluido":{"horas":number,"piquetes":number,"deslocacoes":number},
 "descontoFidelizacao":number,"descontoPecasGeral":number,
 "pecasMarca":[{"marca":string,"pct":number}]}
-Regras: combustível "a gás"->"Gás natural". "visita semestral"->frequencia "semestral". A lista "tiposRevisao" tem um elemento por visita do ano (semestral=2, trimestral=4, anual=1...). Se disserem tipos diferentes por visita ("1ª revisão completa, 2ª inspeção visual")->["Revisão completa","Inspeção visual"]; se só disserem um tipo, repete-o para todas as visitas. "1200€ por ano"->valorAnual=1200. "2h mo"->horas=2. "189 km"->km=189. "indicativo +351"->indicativo="+351". "cliente 203"->codigo="203". "10% desconto"->descontoFidelizacao=10 e descontoPecasGeral=10. "peças weishaupt 23%"->pecasMarca=[{"marca":"Weishaupt","pct":23}]. departamento por defeito "Manutenção". Datas em português ("1 de janeiro de 2026")->"2026-01-01". Campos não mencionados: "" para texto, 0 para números, [] para listas.`;
+Regras: combustível "a gás"->"Gás natural". "visita semestral"->frequencia "semestral". A lista "tiposRevisao" tem um elemento por visita do ano (semestral=2, trimestral=4, anual=1...). Os tipos podem ser texto livre descritivo (ex.: "Inspeção visual e testes às caldeiras", "Manutenção completa aos depósitos de AQS"); usa os nomes padrão da lista quando coincidirem. Se disserem tipos diferentes por visita ("1ª revisão completa, 2ª inspeção visual")->["Revisão completa","Inspeção visual"]; se só disserem um tipo, repete-o para todas as visitas; se não disserem nenhum, usa "Revisão completa". QUANTIDADES: "duas caldeiras Viessmann Vitoplex 300"->dois elementos iguais em "equipamentos", com etiqueta "Caldeira 1" e "Caldeira 2". "caldeiras com queimadores Weishaupt WM-G 30/1-A"->tipoEquip "Caldeira + Queimador", marca "Viessmann / Weishaupt", modelo "Vitoplex 300 + WM-G 30/1-A" (um elemento por caldeira). Se não indicarem frequência, assume "semestral". "1200€ por ano"/"que totalize 1200€ por ano"->valorAnual=1200 (valor base anual de manutenção, a distribuir pelas visitas). "2h mo"->horas=2. "189 km"->km=189. "indicativo +351"->indicativo="+351". "cliente 203"->codigo="203". "10% desconto"->descontoFidelizacao=10 e descontoPecasGeral=10. "peças weishaupt 23%"->pecasMarca=[{"marca":"Weishaupt","pct":23}]. departamento por defeito "Manutenção". Datas em português ("1 de janeiro de 2026")->"2026-01-01". Campos não mencionados: "" para texto, 0 para números, [] para listas.`;
   try{
     const data=await aiCall({model:"claude-sonnet-4-6",max_tokens:1500,system:sys,messages:[{role:"user",content:txt}]});
     let out=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim().replace(/```json|```/g,'').trim();
@@ -828,6 +837,14 @@ function fill(o){
   if(o.anos)S.contrato.anos=o.anos;
   if(o.avenca)S.contrato.avenca=o.avenca;
   if(o.valorAnual!=null)S.contrato.valorAnual=o.valorAnual;
+  // valor anual ditado + preços por visita a 0 -> distribuir o valor pelas visitas de todos os equipamentos
+  if(+o.valorAnual>0 && S.contrato.baseDeEquipamentos!==false){
+    const todasZero=S.equipamentos.every(e=>(e.precosVisita||[]).every(p=>!(+p)));
+    const nVis=S.equipamentos.reduce((t,e)=>t+(freqN[e.frequencia]||1),0);
+    if(todasZero&&nVis>0){const unit=Math.floor((+o.valorAnual)/nVis*100)/100;let resto=Math.round(((+o.valorAnual)-unit*nVis)*100)/100;
+      S.equipamentos.forEach(e=>{const n=freqN[e.frequencia]||1;e.precosVisita=Array.from({length:n},()=>unit);});
+      const last=S.equipamentos[S.equipamentos.length-1];last.precosVisita[last.precosVisita.length-1]=Math.round((unit+resto)*100)/100;}
+  }
   if(o.incluido){S.incluido.horas=o.incluido.horas||0;S.incluido.piquetes=o.incluido.piquetes||0;S.incluido.deslocacoes=o.incluido.deslocacoes||0;}
   if(o.descontoFidelizacao!=null){S.descFid=o.descontoFidelizacao;S.descontos.horas=S.descontos.deslocacoes=S.descontos.piquetes=o.descontoFidelizacao;}
   if(o.descontoPecasGeral!=null)S.descontos.pecasGeral=o.descontoPecasGeral;
